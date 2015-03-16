@@ -27,6 +27,12 @@ describe('Require', function() {
     });
   });
 
+  it('will automatically load index.js when supplied a folder', function() {
+    return amd.require.load('./fixtures/').then(function(module) {
+      assert(module.test === 'the accomplishment of an aim or purpose.');
+    });
+  });
+
   it('will fail when loading a missing file', function() {
     return amd.require.load('./fixtures/not-found').catch(function(ex) {
       assert(ex.message === 'Module: ./fixtures/not-found failed to load');

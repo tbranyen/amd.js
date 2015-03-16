@@ -52,8 +52,7 @@
     }
 
     // Find current module id.
-    var moduleName = nodeRequire ? define.__module_name__
-      : script.dataset.moduleName;
+    var moduleName = nodeRequire ? define.__module_name__ : script.dataset.moduleName;
 
     delete define.__module_name__;
 
@@ -159,6 +158,10 @@
   };
 
   require.toUrl = function(moduleName) {
+    // Default to index.js when supplied a folder.
+    if (moduleName.slice(-1) === '/') {
+      moduleName += 'index';
+    }
     return moduleName + '.js';
   };
 
