@@ -45,16 +45,23 @@
    */
   function define(deps, callback) {
     var isCjs;
+    var script;
+    var moduleName;
+    var modulePath;
 
     // Browser env, get access to the parent script.
     if (!nodeRequire) {
-      var script = document.scripts[document.scripts.length - 1];
+      script = define.__script__;
     }
 
     // Find current module id.
-    var moduleName = nodeRequire ? define.__module_name__ : script.dataset.moduleName;
+    if (nodeRequire || script) {
+      moduleName = nodeRequire ? define.__module_name__ : script.dataset.moduleName;
+      modulePath = nodeRequire ? define.__module_path__ : script.dataset.modulePath;
+    }
 
     delete define.__module_name__;
+    delete define.__module_path__;
 
     // Using a named define.
     if (typeof deps === 'string') {
@@ -70,10 +77,11 @@
       deps = callback.toString().match(requireRegExp) || [];
       deps = deps.map(function(req) {
         var currentModule = req.slice(9, -2);
+        var isLocal = currentModule.indexOf('.') === 0 || currentModule.indexOf('/') === 0;
 
         return {
           name: currentModule,
-          path: join(moduleName, currentModule)
+          path: isLocal ? join(modulePath, currentModule) : currentModule
         };
       });
 
@@ -88,16 +96,35 @@
       });
     }
 
-    var loadAllDeps = Promise.all(deps.map(require.load)).then(function() {
+    var loadAllDeps = Promise.all(deps.map(require.load)).then(function(deps) {
       var module = { exports: {} };
+      var isMixed = false;
+
+      // Pass `exports` and `module`.
+      deps = deps.map(function(dep) {
+        if (dep === 'exports') {
+          isMixed = true;
+          return module.exports;
+        }
+        else if (dep === 'module') {
+          isMixed = true;
+          return module;
+        }
+
+        return dep;
+      });
 
       // In CommonJS the user will set the `module.exports`.
       if (isCjs) {
         callback.apply(global, [require, module.exports, module]);
       }
+      // An annoying signature to support, allows mixed CJS and AMD.
+      else if (isMixed) {
+        callback.apply(global, deps);
+      }
       // In AMD we set the `module.exports` with the return value.
       else {
-        module.exports = callback.apply(global, arguments);
+        module.exports = callback.apply(global, deps);
       }
 
       if (nodeRequire) {
@@ -121,6 +148,8 @@
     return promiseCache[moduleName] = loadAllDeps;
   }
 
+  define.amd = {};
+
   /**
    * require
    *
@@ -135,12 +164,7 @@
     if (module) {
       return module.exports;
     }
-    // Attempt to use the already defined require function.
-    else if (nodeRequire) {
-      return nodeRequire(moduleName);
-    }
     else {
-      console.log('Module: ' + moduleName + ' not found, attempting to load');
       return require.load(moduleName);
     }
   }
@@ -158,10 +182,6 @@
   };
 
   require.toUrl = function(moduleName) {
-    // Default to index.js when supplied a folder.
-    if (moduleName.slice(-1) === '/') {
-      moduleName += 'index';
-    }
     return moduleName + '.js';
   };
 
@@ -172,6 +192,16 @@
     if (typeof moduleName !== 'string') {
       name = moduleName.name;
       path = moduleName.path;
+    }
+
+    // Just return the name and replace in `define`.
+    if (name === 'exports' || name === 'module') {
+      return name;
+    }
+
+    // Default to index.js when supplied a folder.
+    if (path.slice(-1) === '/') {
+      path += 'index';
     }
 
     // If a module is in-flight, meaning still loading, wait for it.
@@ -191,14 +221,22 @@
 
     if (nodeRequire) {
       define.__module_name__ = name;
+      define.__module_path__ = path;
 
       return new Promise(function(resolve, reject) {
+        var exported;
+
         try {
-          nodeRequire(path);
+          exported = nodeRequire(path);
         }
         catch (ex) {
           ex.message = 'Module: ' + name + ' failed to load';
           return reject(ex);
+        }
+
+        if (!promiseCache[name]) {
+          require.cache[name] = { exports: exported };
+          return resolve(exported);
         }
 
         return promiseCache[name].then(function() {
@@ -207,9 +245,16 @@
       });
     }
 
+    // If it is a path, do not try and look up.
+    if (path === name && name.indexOf('.') !== 0 && name.indexOf('/') !== 0) {
+      return nodeModulesResolve(name);
+    }
+
     var script = document.createElement('script');
     script.src = require.toUrl(path);
     script.dataset.moduleName = name;
+    script.dataset.modulePath = path;
+    define.__script__ = script;
     document.body.appendChild(script);
 
     return new Promise(function(resolve, reject) {
@@ -230,6 +275,10 @@
         window.onerror = oldError;
         script.parentNode.removeChild(script);
 
+        if (!promiseCache[name]) {
+          return console.log('Could not find module: ' + name + ' in flight');
+        }
+
         promiseCache[name].then(function() {
           if (require.cache[name]) {
             resolve(require.cache[name].exports);
@@ -241,6 +290,51 @@
       });
     });
   };
+
+  function makeRequest(name) {
+
+  }
+
+  /**
+   * nodeModulesResolve
+   *
+   * @param moduleName
+   * @return
+   */
+  function nodeModulesResolve(moduleName) {
+    var pkgPath = '../node_modules/' + moduleName + '/package.json';
+
+    return new Promise(function(resolve, reject) {
+      var xhr = new XMLHttpRequest();
+
+      xhr.onreadystatechange = function() {
+        var DONE = this.DONE || 4;
+
+        if (this.readyState == DONE) {
+          resolve(JSON.parse(xhr.responseText));
+        }
+      };
+
+      // Find the package.json.
+      xhr.open('GET', pkgPath, true);
+
+      xhr.send(null);
+    }).then(function(pkg) {
+      if (!pkg.main) {
+        throw new Error('Package ' + name + ' missing main property');
+      }
+
+      // If there is a trailing `.js` trim.
+      if (pkg.main.indexOf('.js') === pkg.main.length - 3) {
+        pkg.main = pkg.main.slice(0, -3);
+      }
+
+      return require.load({
+        name: pkg.name,
+        path: join(pkgPath, pkg.main)
+      });
+    });
+  }
 
   var exports = {
     define: define, require: require

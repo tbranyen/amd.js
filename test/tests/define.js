@@ -3,6 +3,10 @@ describe('Define', function() {
     assert(typeof amd.define === 'function');
   });
 
+  it('has an amd object', function() {
+    assert(typeof amd.define.amd === 'object');
+  });
+
   it('can define a named module', function() {
     var jQuery = {};
 

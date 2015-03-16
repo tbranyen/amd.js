@@ -11,8 +11,10 @@ describe('Require', function() {
     assert(amd.require('assert') === assert);
   });
 
-  inNodeIt('can require a node module', function() {
-    assert(amd.require('mocha') === require('mocha'));
+  it('can require a node module', function() {
+    return amd.require.load('mustache').then(function(module) {
+      assert(module.name === 'mustache.js');
+    });
   });
 
   it('can load a basic amd module', function() {
@@ -30,6 +32,7 @@ describe('Require', function() {
   it('will automatically load index.js when supplied a folder', function() {
     return amd.require.load('./fixtures/').then(function(module) {
       assert(module.test === 'the accomplishment of an aim or purpose.');
+      assert(module.mustache.name === 'mustache.js');
     });
   });
 
