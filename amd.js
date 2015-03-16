@@ -1,10 +1,13 @@
-(function(global, document) {
+(function(global, nodeRequire) {
   'use strict';
 
   // Save the Node/whatever global require.
-  var nodeRequire = global.require;
   var requireRegExp = /require\(.*\)/g;
   var promiseCache = {};
+  nodeRequire = global.require || nodeRequire;
+
+  // TODO Symlink support from node_modules.
+  //if (__dirname !== process.cwd()) {}
 
   /**
    * join
@@ -227,6 +230,11 @@
         var exported;
 
         try {
+          if (__dirname !== process.cwd() &&
+            (path.indexOf('.') === 0 || path.indexOf('/') === 0)) {
+              path = join(nodeRequire.main.filename, path);
+            }
+
           exported = nodeRequire(path);
         }
         catch (ex) {
@@ -236,12 +244,13 @@
 
         if (!promiseCache[name]) {
           require.cache[name] = { exports: exported };
-          return resolve(exported);
+          resolve(exported);
         }
-
-        return promiseCache[name].then(function() {
-          resolve(require.cache[name].exports);
-        });
+        else {
+          promiseCache[name].then(function() {
+            resolve(require.cache[name].exports);
+          });
+        }
       });
     }
 
@@ -367,4 +376,7 @@
       require.load(thisScript.dataset.main);
     }
   }
-})(typeof global !== 'undefined' ? global : this, this.document);
+})(
+  typeof global !== 'undefined' ? global : this,
+  typeof require !== 'undefined' ? require : null
+);
