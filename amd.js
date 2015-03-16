@@ -4,6 +4,7 @@
   // Save the Node/whatever global require.
   var nodeRequire = global.require;
   var requireRegExp = /require\(.*\)/g;
+  var promiseCache = {};
 
   /**
    * join
@@ -45,15 +46,22 @@
   function define(deps, callback) {
     var isCjs;
 
-    // Find current module id.
-    var moduleName;
-
-    if (nodeRequire) {
-      moduleName = define.__module_name__;
-    }
-    else {
+    // Browser env, get access to the parent script.
+    if (!nodeRequire) {
       var script = document.scripts[document.scripts.length - 1];
-      moduleName = script.dataset.moduleName;
+    }
+
+    // Find current module id.
+    var moduleName = nodeRequire ? define.__module_name__
+      : script.dataset.moduleName;
+
+    delete define.__module_name__;
+
+    // Using a named define.
+    if (typeof deps === 'string') {
+      moduleName = deps;
+      deps = callback;
+      callback = arguments[2];
     }
 
     // User opt'd into Simplified Common JS pattern.
@@ -74,7 +82,14 @@
       isCjs = true;
     }
 
-    define.__promise__ = Promise.all(deps.map(require.load)).then(function() {
+    // If no module name exists, use a UUID.
+    if (!moduleName) {
+      moduleName = "0000-0000-0000-0000-0000".replace(/0/g, function() {
+        return Math.floor(Math.random() * 16).toString(16);
+      });
+    }
+
+    var loadAllDeps = Promise.all(deps.map(require.load)).then(function() {
       var module = { exports: {} };
 
       // In CommonJS the user will set the `module.exports`.
@@ -90,20 +105,21 @@
         require.cache[moduleName] = {
           exports: module.exports
         };
-
-        delete define.__module_name__;
       }
       else {
         require.cache[moduleName] = {
           exports: module.exports
         }
       }
+
+      // Attach the current module name.
+      module.name = moduleName;
+
+      return module;
     });
 
-    // TODO Cleanup
-    if (script) {
-      script.__promise__ = define.__promise__;
-    }
+    // Attach the in-flight promise.
+    return promiseCache[moduleName] = loadAllDeps;
   }
 
   /**
@@ -155,6 +171,13 @@
       path = moduleName.path;
     }
 
+    // If a module is in-flight, meaning still loading, wait for it.
+    if (promiseCache[name]) {
+      return promiseCache[name].then(function(module) {
+        return module.exports;
+      });
+    }
+
     // TODO this only works now because ./success is assumed unique, we need to
     // normalize all modules to full paths in the main cache.  the local require
     // might be able to figure out relative paths better
@@ -175,9 +198,8 @@
           return reject(ex);
         }
 
-        return define.__promise__.then(function() {
+        return promiseCache[name].then(function() {
           resolve(require.cache[name].exports);
-          delete define.__promise__;
         });
       });
     }
@@ -205,7 +227,7 @@
         window.onerror = oldError;
         script.parentNode.removeChild(script);
 
-        script.__promise__.then(function() {
+        promiseCache[name].then(function() {
           if (require.cache[name]) {
             resolve(require.cache[name].exports);
           }
@@ -235,5 +257,4 @@
   if (!global.define) {
     global.define = define;
   }
-
 })(typeof global !== 'undefined' ? global : this, this.document);
