@@ -191,9 +191,19 @@
     }
   };
 
+  // Configure the loader.
+  require.config = function(options) {
+    require.options = Object.create(options || {});
+
+    // Setup defaults.
+    require.options.__proto__ = {
+      paths: {}
+    };
+  };
+
   // Convert a module name to a path.
   require.resolve = function(moduleName) {
-    return arguments[0];
+    return moduleName;
   };
 
   require.toUrl = function(moduleName) {
