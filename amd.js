@@ -327,6 +327,11 @@
       // If there is a trailing `.js` trim.
       if (pkg.main.indexOf('.js') === pkg.main.length - 3) {
         pkg.main = pkg.main.slice(0, -3);
+
+        // TODO Refactor into `join`.
+        if (pkg.main[0] !== '.') {
+          pkg.main = './' + pkg.main;
+        }
       }
 
       return require.load({
@@ -353,5 +358,13 @@
 
   if (!global.define) {
     global.define = define;
+  }
+
+  if (!nodeRequire) {
+    var thisScript = document.scripts[document.scripts.length - 1];
+
+    if (thisScript.dataset.main) {
+      require.load(thisScript.dataset.main);
+    }
   }
 })(typeof global !== 'undefined' ? global : this, this.document);
