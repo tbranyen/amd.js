@@ -1,0 +1,17 @@
+{
+  "name": "amd.js",
+  "version": "1.0.0",
+  "description": "",
+  "main": "amd.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "mocha test/runner test/tests"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "mocha": "^2.2.1"
+  }
+}
