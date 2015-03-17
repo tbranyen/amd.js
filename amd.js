@@ -482,9 +482,9 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = exports;
   }
-  else {
-    global.amd = exports;
-  }
+
+  // Always expose the global amd.
+  global.amd = exports;
 
   if (!global.require) {
     global.require = require;
