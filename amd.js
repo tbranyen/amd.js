@@ -4,6 +4,8 @@
   // Save the Node/whatever global require.
   var requireRegExp = /require\(.*\)/g;
   var promiseCache = {};
+  // FIXME If you implement contexts, you're gonna hate this global.
+  var options = {};
 
   // Find a valid `require` function.
   nodeRequire = global.require || nodeRequire;
@@ -53,6 +55,26 @@
     return module.indexOf('.') === 0 || module.indexOf('/') === 0;
   }
 
+  function addOption(key, value) {
+    var option = options[key];
+
+    // If it's an object, merge the keys.
+    if (typeof option === 'object') {
+      Object.keys(value || {}).forEach(function(propKey) {
+        option[propKey] = value[propKey];
+      });
+    }
+    else {
+      options[key] = value;
+    }
+  }
+
+  function addOptions(opts) {
+    Object.keys(opts || {}).forEach(function(key) {
+      addOption(key, opts[key]);
+    });
+  }
+
   /**
    * Defines a module to be required.
    *
@@ -61,7 +83,7 @@
    * @return {Promise}
    */
   function define(deps, callback) {
-    var isCjs, script, moduleName, modulePath;
+    var isCjs, isMixed, script, moduleName, modulePath;
     var isNode = require.isNode;
 
     // Browser env, get access to the parent script.
@@ -93,6 +115,9 @@
       deps = deps.map(function(req) {
         var current = req.slice(9, -2);
 
+        // Normalize.
+        current = require.resolve(current);
+
         return {
           name: current,
           path: isLocal(current) ? join(modulePath, current) : current
@@ -101,6 +126,24 @@
 
       // In CJS-mode.
       isCjs = true;
+    }
+
+    // Map over the deps and ensure they are normalized.
+    if (!isCjs) {
+      deps = deps.map(function(dep) {
+        // Do not mess with special imports.
+        if (['require', 'exports', 'module'].indexOf(dep) > -1) {
+          return dep;
+        }
+
+        // Normalize.
+        dep = require.resolve(dep);
+
+        return {
+          name: dep,
+          path: isLocal(dep) ? join(modulePath, dep) : dep
+        };
+      });
     }
 
     // If no module name exists, use a UUID.
@@ -112,9 +155,8 @@
 
     var loadAllDeps = Promise.all(deps.map(require.load)).then(function(deps) {
       var module = { exports: {} };
-      var isMixed = false;
 
-      // Pass `exports` and `module`.
+      // Ensure special imports are addressed.
       deps = deps.map(function(dep) {
         if (dep === 'exports') {
           isMixed = true;
@@ -123,6 +165,9 @@
         else if (dep === 'module') {
           isMixed = true;
           return module;
+        }
+        else if (dep === 'require') {
+          return require;
         }
 
         return dep;
@@ -192,17 +237,29 @@
   };
 
   // Configure the loader.
-  require.config = function(options) {
-    require.options = Object.create(options || {});
+  require.config = function(opts) {
+    // If the argument is a string, pass back the configuration prop.
+    if (typeof opts === 'string') {
+      return options[opts];
+    }
 
-    // Setup defaults.
-    require.options.__proto__ = {
-      paths: {}
-    };
+    // Add all options.
+    addOptions(opts);
+
+    return options;
   };
 
   // Convert a module name to a path.
   require.resolve = function(moduleName) {
+    var parts = moduleName.split('/');
+    var paths = require.config('paths') || {};
+
+    // Check if the first part is in `require.config('paths')`.
+    if (Object.keys(paths).indexOf(parts[0]) > -1) {
+      parts[0] = paths[parts[0]];
+      return parts.join('/');
+    }
+
     return moduleName;
   };
 
@@ -218,6 +275,10 @@
       name = moduleName.name;
       path = moduleName.path;
     }
+
+    // Normalize the name and path.
+    name = require.resolve(name);
+    path = require.resolve(path);
 
     // Just return the name and replace in `define`.
     if (name === 'exports' || name === 'module') {

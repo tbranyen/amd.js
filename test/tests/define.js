@@ -1,4 +1,4 @@
-describe('Define', function() {
+describe('define', function() {
   it('is a function', function() {
     assert(typeof amd.define === 'function');
   });
