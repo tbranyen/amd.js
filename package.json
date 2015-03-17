@@ -7,7 +7,8 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "istanbul cover -- _mocha test/runner test/tests"
+    "test": "mocha test/runner test/tests",
+    "coverage": "istanbul cover -- _mocha test/runner test/tests"
   },
   "author": "",
   "license": "ISC",

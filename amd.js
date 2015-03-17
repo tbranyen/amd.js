@@ -4,17 +4,23 @@
   // Save the Node/whatever global require.
   var requireRegExp = /require\(.*\)/g;
   var promiseCache = {};
+
+  // Find a valid `require` function.
   nodeRequire = global.require || nodeRequire;
+
+  // Expose convenience booleans to determine environment.
+  require.isNode = Boolean(nodeRequire);
+  require.isBrowser = !require.isNode;
 
   // TODO Symlink support from node_modules.
   //if (__dirname !== process.cwd()) {}
 
   /**
-   * join
+   * Joins two paths together.
    *
    * @param pathA
    * @param pathB
-   * @return
+   * @return A normalized combined path
    */
   function join(pathA, pathB) {
     var base = pathA.split('/');
@@ -24,12 +30,10 @@
         if (part === '.') {
           base.pop();
         }
-
         else if (part === '..') {
           base.pop();
           base.pop();
         }
-
         else {
           return part;
         }
@@ -40,27 +44,35 @@
   }
 
   /**
-   * define
+   * isLocal
+   *
+   * @param module
+   * @return
+   */
+  function isLocal(module) {
+    return module.indexOf('.') === 0 || module.indexOf('/') === 0;
+  }
+
+  /**
+   * Defines a module to be required.
    *
    * @param deps
    * @param callback
-   * @return
+   * @return {Promise}
    */
   function define(deps, callback) {
-    var isCjs;
-    var script;
-    var moduleName;
-    var modulePath;
+    var isCjs, script, moduleName, modulePath;
+    var isNode = require.isNode;
 
     // Browser env, get access to the parent script.
-    if (!nodeRequire) {
+    if (require.isBrowser) {
       script = define.__script__;
     }
 
     // Find current module id.
-    if (nodeRequire || script) {
-      moduleName = nodeRequire ? define.__module_name__ : script.dataset.moduleName;
-      modulePath = nodeRequire ? define.__module_path__ : script.dataset.modulePath;
+    if (isNode || script) {
+      moduleName = isNode ? define.__module_name__ : script.dataset.moduleName;
+      modulePath = isNode ? define.__module_path__ : script.dataset.modulePath;
     }
 
     delete define.__module_name__;
@@ -79,12 +91,11 @@
 
       deps = callback.toString().match(requireRegExp) || [];
       deps = deps.map(function(req) {
-        var currentModule = req.slice(9, -2);
-        var isLocal = currentModule.indexOf('.') === 0 || currentModule.indexOf('/') === 0;
+        var current = req.slice(9, -2);
 
         return {
-          name: currentModule,
-          path: isLocal ? join(modulePath, currentModule) : currentModule
+          name: current,
+          path: isLocal(current) ? join(modulePath, current) : current
         };
       });
 
@@ -130,7 +141,7 @@
         module.exports = callback.apply(global, deps);
       }
 
-      if (nodeRequire) {
+      if (isNode) {
         require.cache[moduleName] = {
           exports: module.exports
         };
@@ -151,10 +162,11 @@
     return promiseCache[moduleName] = loadAllDeps;
   }
 
+  // This is often required to load UMD modules.
   define.amd = {};
 
   /**
-   * require
+   * Require or load a module.
    *
    * @param moduleName
    * @return
@@ -178,8 +190,6 @@
       exports: require
     }
   };
-
-  require.isNode = Boolean(nodeRequire);
 
   // Convert a module name to a path.
   require.resolve = function(moduleName) {
@@ -224,7 +234,7 @@
       return Promise.resolve(require.cache[path].exports);
     }
 
-    if (nodeRequire) {
+    if (require.isNode) {
       define.__module_name__ = name;
       define.__module_path__ = path;
 
@@ -232,10 +242,9 @@
         var exported;
 
         try {
-          if (__dirname !== process.cwd() &&
-            (path.indexOf('.') === 0 || path.indexOf('/') === 0)) {
-              path = join(nodeRequire.main.filename, path);
-            }
+          if (process.cwd() !== __dirname && isLocal(path)) {
+            path = join(nodeRequire.main.filename, path);
+          }
 
           exported = nodeRequire(path);
         }
@@ -257,7 +266,7 @@
     }
 
     // If it is a path, do not try and look up.
-    if (path === name && name.indexOf('.') !== 0 && name.indexOf('/') !== 0) {
+    if (path === name && !isLocal(name)) {
       return nodeModulesResolve(name);
     }
 
@@ -301,10 +310,6 @@
       });
     });
   };
-
-  function makeRequest(name) {
-
-  }
 
   /**
    * nodeModulesResolve
@@ -379,7 +384,7 @@
     global.define = define;
   }
 
-  if (!nodeRequire) {
+  if (require.isBrowser) {
     var thisScript = document.scripts[document.scripts.length - 1];
 
     if (thisScript.dataset.main) {

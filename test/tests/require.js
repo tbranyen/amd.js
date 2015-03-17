@@ -29,6 +29,12 @@ describe('Require', function() {
     });
   });
 
+  it('can load an empty simplified commonjs amd module', function() {
+    return amd.require.load('./fixtures/empty-cjs').then(function(module) {
+      assert(typeof module === 'object');
+    });
+  });
+
   it('will automatically load index.js when supplied a folder', function() {
     return amd.require.load('./fixtures/').then(function(module) {
       assert(module.test === 'the accomplishment of an aim or purpose.');
@@ -46,5 +52,10 @@ describe('Require', function() {
     amd.require.load('./fixtures/failure').catch(function() {
       done();
     });
+  });
+
+  it('can load a primed module', function() {
+    amd.require.cache['test'] = { exports: 'hello world' };
+    assert(amd.require('test') === 'hello world');
   });
 });
