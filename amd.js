@@ -10,6 +10,7 @@
     paths: {},
     baseUrl: ''
   };
+  var isConfig = '';
 
   // Find a valid `require` function.
   nodeRequire = global.require || nodeRequire;
@@ -399,6 +400,11 @@
         window.onerror = oldError;
         script.parentNode.removeChild(script);
 
+        if (isConfig === name) {
+          isConfig = '';
+          return resolve();
+        }
+
         if (!promiseCache[name]) {
           return console.log('Could not find module: ' + name + ' in flight');
         }
@@ -490,9 +496,17 @@
 
   if (require.isBrowser) {
     var thisScript = document.scripts[document.scripts.length - 1];
+    var loadConfig = Promise.resolve(true);
+
+    if (thisScript.dataset.config) {
+      isConfig = thisScript.dataset.config;
+      loadConfig = require.load(thisScript.dataset.config);
+    }
 
     if (thisScript.dataset.main) {
-      require.load(thisScript.dataset.main);
+      loadConfig.then(function() {
+        require.load(thisScript.dataset.main);
+      });
     }
   }
 })(
