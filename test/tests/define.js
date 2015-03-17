@@ -1,16 +1,18 @@
 describe('define', function() {
+  var define = amd.define;
+
   it('is a function', function() {
-    assert(typeof amd.define === 'function');
+    assert(typeof define === 'function');
   });
 
   it('has an amd object', function() {
-    assert(typeof amd.define.amd === 'object');
+    assert(typeof define.amd === 'object');
   });
 
   it('can define a named module', function() {
     var jQuery = {};
 
-    amd.define('jquery', [], function() {
+    define('jquery', [], function() {
       return jQuery;
     });
 
@@ -20,7 +22,7 @@ describe('define', function() {
   });
 
   it('can define an anonymous module', function() {
-    return amd.define([], function() {
+    return define([], function() {
       return 'Anonymous';
     }).then(function(module) {
       assert(module.exports === 'Anonymous', 'Exports the right value');

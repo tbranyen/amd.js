@@ -3,9 +3,13 @@
 
   // Save the Node/whatever global require.
   var requireRegExp = /require\(.*\)/g;
+  var hasPluginRegExp = /(.*\w)\.(.*)$/;
   var promiseCache = {};
   // FIXME If you implement contexts, you're gonna hate this global.
-  var options = {};
+  var options = {
+    paths: {},
+    baseUrl: ''
+  };
 
   // Find a valid `require` function.
   nodeRequire = global.require || nodeRequire;
@@ -126,6 +130,12 @@
 
       // In CJS-mode.
       isCjs = true;
+
+      // FIXME lodash in NPM uses define(function() { return });...
+      if (!callback.length) {
+        deps = [];
+        isCjs = false;
+      }
     }
 
     // Map over the deps and ensure they are normalized.
@@ -224,6 +234,12 @@
     if (module) {
       return module.exports;
     }
+    else if (require.isNode) {
+      try {
+        return nodeRequire(moduleName);
+      }
+      catch (unhandledException) {}
+    }
     else {
       return require.load(moduleName);
     }
@@ -264,7 +280,7 @@
   };
 
   require.toUrl = function(moduleName) {
-    return moduleName + '.js';
+    return moduleName;
   };
 
   require.load = function(moduleName) {
@@ -279,6 +295,23 @@
     // Normalize the name and path.
     name = require.resolve(name);
     path = require.resolve(path);
+
+    var hasPlugin = name.match(hasPluginRegExp);
+
+    // Support plugins.
+    if (hasPlugin) {
+      return require.load(require.resolve(hasPlugin[2])).then(function(plugin) {
+        return new Promise(function(resolve) {
+          plugin.load(path, require, function(exports) {
+            require.cache[name] = {
+              exports: exports
+            };
+
+            resolve(exports);
+          }, options);
+        });
+      });
+    }
 
     // Just return the name and replace in `define`.
     if (name === 'exports' || name === 'module') {
@@ -342,7 +375,7 @@
     }
 
     var script = document.createElement('script');
-    script.src = require.toUrl(path);
+    script.src = require.toUrl(path) + '.js';
     script.dataset.moduleName = name;
     script.dataset.modulePath = path;
     define.__script__ = script;

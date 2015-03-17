@@ -14,4 +14,5 @@
   };
 
   global.inNodeIt = typeof module === "object" ? it : function() {};
+  global.inBrowserIt = typeof module !== "object" ? it : function() {};
 })(typeof global === 'object' ? global : this);
