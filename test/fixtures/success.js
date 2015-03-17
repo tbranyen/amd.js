@@ -1,3 +1,3 @@
-define([], function() {
-  return 'the accomplishment of an aim or purpose.';
+define(['module'], function(module) {
+  module.exports = 'the accomplishment of an aim or purpose.';
 });

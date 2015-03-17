@@ -179,6 +179,8 @@
     }
   };
 
+  require.isNode = Boolean(nodeRequire);
+
   // Convert a module name to a path.
   require.resolve = function(moduleName) {
     return arguments[0];
@@ -312,6 +314,14 @@
    */
   function nodeModulesResolve(moduleName) {
     var pkgPath = '../node_modules/' + moduleName + '/package.json';
+
+    // Fetch from nested modules.
+    if (moduleName.indexOf('/') > -1) {
+      return require.load({
+        name: moduleName,
+        path: join(pkgPath, './')
+      });
+    }
 
     return new Promise(function(resolve, reject) {
       var xhr = new XMLHttpRequest();
