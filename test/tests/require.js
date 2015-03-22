@@ -37,18 +37,17 @@ describe('require', function() {
     });
   });
 
+  inBrowserIt('can load a cjs web module from node_modules', function() {
+    return require.load('angular').then(function(module) {
+      assert(module.version.codeName === 'locality-filtration');
+    });
+  });
+
   //it('can load an empty simplified commonjs amd module', function() {
   //  return require.load('./fixtures/empty-cjs').then(function(module) {
   //    assert(typeof module === 'object');
   //  });
   //});
-
-  it('will automatically load index.js when supplied a folder', function() {
-    return require.load('./fixtures/').then(function(module) {
-      assert(module.test === 'the accomplishment of an aim or purpose.');
-      assert(module.mustache.name === 'mustache.js');
-    });
-  });
 
   it('will fail when loading a missing file', function() {
     return require.load('./fixtures/not-found').catch(function(ex) {

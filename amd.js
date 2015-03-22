@@ -2,7 +2,7 @@
   'use strict';
 
   // Save the Node/whatever global require.
-  var requireRegExp = /require\(.*\)/g;
+  var requireRegExp = /require\(['"](.*)['"]\)/g;
   var hasPluginRegExp = /(.*\w)\.(.*)$/;
   var promiseCache = {};
   // FIXME If you implement contexts, you're gonna hate this global.
@@ -216,7 +216,7 @@
     });
 
     // Attach the in-flight promise.
-    return promiseCache.__inflight__ = loadAllDeps;
+    return promiseCache[moduleName] = promiseCache.__inflight__ = loadAllDeps;
   }
 
   // This is often required to load UMD modules.
@@ -243,7 +243,7 @@
       catch (unhandledException) {}
     }
     else {
-      return require.load(moduleName);
+      require.load(moduleName);
     }
   }
 
@@ -320,11 +320,6 @@
       return name;
     }
 
-    // Default to index.js when supplied a folder.
-    if (path.slice(-1) === '/') {
-      path += 'index';
-    }
-
     // If a module is in-flight, meaning still loading, wait for it.
     if (promiseCache[name]) {
       return promiseCache[name].then(function(module) {
@@ -373,7 +368,7 @@
 
     // If it is a path, do not try and look up.
     if (path === name && !isLocal(name)) {
-      return nodeModulesResolve(name);
+      return nodeModulesResolve(name || moduleName);
     }
 
     var script = document.createElement('script');
@@ -429,6 +424,33 @@
   };
 
   /**
+   * makeRequest
+   *
+   * @param path
+   * @return
+   */
+  function makeRequest(path) {
+    return new Promise(function(resolve, reject) {
+      var xhr = new XMLHttpRequest();
+
+      xhr.onreadystatechange = function() {
+        var DONE = this.DONE || 4;
+
+        if (this.readyState == DONE) {
+          resolve(xhr.responseText);
+        }
+      };
+
+      // Find the package.json.
+      xhr.open('GET', path, true);
+
+      xhr.send(null);
+
+      return xhr;
+    });
+  }
+
+  /**
    * nodeModulesResolve
    *
    * @param moduleName
@@ -436,6 +458,7 @@
    */
   function nodeModulesResolve(moduleName) {
     var pkgPath = '../node_modules/' + moduleName + '/package.json';
+    var pkg = {};
 
     // Fetch from nested modules.
     if (moduleName.indexOf('/') > -1) {
@@ -445,28 +468,7 @@
       });
     }
 
-    function makeRequest(path) {
-      return new Promise(function(resolve, reject) {
-        var xhr = new XMLHttpRequest();
-
-        xhr.onreadystatechange = function() {
-          var DONE = this.DONE || 4;
-
-          if (this.readyState == DONE) {
-            resolve(xhr.responseText);
-          }
-        };
-
-        // Find the package.json.
-        xhr.open('GET', path, true);
-
-        xhr.send(null);
-
-        return xhr;
-      });
-    }
-
-    return promiseCache[moduleName] = makeRequest(pkgPath).then(JSON.parse).then(function(pkg) {
+    var normalizeMain = function(pkg) {
       if (!pkg.main) {
         throw new Error('Package ' + name + ' missing main property');
       }
@@ -482,12 +484,34 @@
       }
 
       return pkg;
-    }).then(function(pkg) {
+    };
+
+    var loadMainScript = function(pkg) {
       if (pkg.main.slice(-3) !== '.js' && pkg.main.slice(-5) !== '.json') {
         pkg.main += '.js';
       }
 
-      return makeRequest(join(pkgPath, pkg.main)).then(function(callback) {
+      var modulePath = join(pkgPath, pkg.main);
+      var cache = global.sessionStorage[pkg.main + ':' + pkg.version];
+      var getCallback = cache ? Promise.resolve(cache) : makeRequest(modulePath);
+
+      return getCallback.then(function(callback) {
+        callback = callback.toString();
+
+        // Cache this module callback.
+        global.sessionStorage[moduleName + ':' + pkg.version] = callback;
+
+        if (modulePath.slice(-3) === '.js') {
+          modulePath = modulePath.slice(0, -3);
+        }
+
+        // FIXME Naive check here for AMD compat.
+        if (callback.indexOf('define.amd') > -1 || callback.indexOf('define(') > -1) {
+          return require.load(modulePath).then(function(module) {
+            return [moduleName, module];
+          });
+        }
+
         var deps = callback.toString().match(requireRegExp) || [];
 
         deps = deps.map(function(dep) {
@@ -499,7 +523,8 @@
         if (shim[moduleName]) {
           deps = deps.concat(shim[moduleName]);
         }
-        var loadDependencies = deps.reduce(function(previous, dep) {
+
+        return deps.reduce(function(previous, dep) {
           return previous.then(function() {
             var current = dep;
             var _module = global.module;
@@ -517,6 +542,7 @@
             }
 
             return require.load(current).then(function() {
+              // TODO Make this localized to a specific requiring module.
               require.cache[dep] = global.module;
 
               global.module = _module;
@@ -525,40 +551,39 @@
               return require.cache[dep].exports;
             });
           });
-        }, Promise.resolve());
+        }, Promise.resolve()).then(function() {
+          var _module = global.module;
+          var _exports = global.exports;
 
-        return loadDependencies;
-      }).then(function() { return pkg; });
-    }).then(function(pkg) {
-      if (pkg.main.slice(-5) === '.json') {
-        pkg.main = '';
-      }
-      if (pkg.main.slice(-3) === '.js') {
-        pkg.main = pkg.main.slice(0, -3);
-      }
+          global.module = { exports: {} };
+          global.exports = module.exports;
 
-      var _module = global.module;
-      var _exports = global.exports;
+          return require.load(modulePath).then(function() {
+            require.cache[moduleName] = global.module;
 
-      global.module = { exports: {} };
-      global.exports = module.exports;
+            global.module = _module;
+            global.exports = _exports;
 
-      return require.load({
-        name: moduleName,
-        path: join(pkgPath, pkg.main)
-      }).then(function() {
-        if (promiseCache[moduleName]) {
-          return require.cache[moduleName].exports;
-        }
-
-        require.cache[moduleName] = global.module;
-        global.module = _module;
-        global.exports = _exports;
-
-        console.log(moduleName, require.cache[moduleName]);
-        return require.cache[moduleName].exports;
+            return [moduleName, require.cache[moduleName].exports];
+          });
+        });
       });
-    });
+    };
+
+    var cacheResult = function(result) {
+      var moduleName = result[0];
+      var module = result[1];
+
+      require.cache[moduleName] = { exports: module };
+
+      return module;
+    };
+
+    return promiseCache[moduleName] = makeRequest(pkgPath)
+      .then(JSON.parse)
+      .then(normalizeMain)
+      .then(loadMainScript)
+      .then(cacheResult);
   }
 
   var exports = {
