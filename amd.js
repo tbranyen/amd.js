@@ -8,6 +8,7 @@
   // FIXME If you implement contexts, you're gonna hate this global.
   var options = {
     paths: {},
+    shim: {},
     baseUrl: ''
   };
   var isConfig = '';
@@ -215,7 +216,7 @@
     });
 
     // Attach the in-flight promise.
-    return promiseCache[moduleName] = loadAllDeps;
+    return promiseCache.__inflight__ = loadAllDeps;
   }
 
   // This is often required to load UMD modules.
@@ -300,7 +301,7 @@
     var hasPlugin = name.match(hasPluginRegExp);
 
     // Support plugins.
-    if (hasPlugin) {
+    if (hasPlugin && require.config('paths')[hasPlugin[2]]) {
       return require.load(require.resolve(hasPlugin[2])).then(function(plugin) {
         return new Promise(function(resolve) {
           plugin.load(path, require, function(exports) {
@@ -397,12 +398,18 @@
       });
 
       script.addEventListener('load', function() {
+        promiseCache[script.dataset.moduleName] = promiseCache.__inflight__;
+
         window.onerror = oldError;
         script.parentNode.removeChild(script);
 
         if (isConfig === name) {
           isConfig = '';
           return resolve();
+        }
+
+        if (typeof module === 'object' && module.exports) {
+          return resolve(module.exports);
         }
 
         if (!promiseCache[name]) {
@@ -438,22 +445,28 @@
       });
     }
 
-    return new Promise(function(resolve, reject) {
-      var xhr = new XMLHttpRequest();
+    function makeRequest(path) {
+      return new Promise(function(resolve, reject) {
+        var xhr = new XMLHttpRequest();
 
-      xhr.onreadystatechange = function() {
-        var DONE = this.DONE || 4;
+        xhr.onreadystatechange = function() {
+          var DONE = this.DONE || 4;
 
-        if (this.readyState == DONE) {
-          resolve(JSON.parse(xhr.responseText));
-        }
-      };
+          if (this.readyState == DONE) {
+            resolve(xhr.responseText);
+          }
+        };
 
-      // Find the package.json.
-      xhr.open('GET', pkgPath, true);
+        // Find the package.json.
+        xhr.open('GET', path, true);
 
-      xhr.send(null);
-    }).then(function(pkg) {
+        xhr.send(null);
+
+        return xhr;
+      });
+    }
+
+    return promiseCache[moduleName] = makeRequest(pkgPath).then(JSON.parse).then(function(pkg) {
       if (!pkg.main) {
         throw new Error('Package ' + name + ' missing main property');
       }
@@ -468,9 +481,82 @@
         }
       }
 
+      return pkg;
+    }).then(function(pkg) {
+      if (pkg.main.slice(-3) !== '.js' && pkg.main.slice(-5) !== '.json') {
+        pkg.main += '.js';
+      }
+
+      return makeRequest(join(pkgPath, pkg.main)).then(function(callback) {
+        var deps = callback.toString().match(requireRegExp) || [];
+
+        deps = deps.map(function(dep) {
+          return dep.slice(9, -2);
+        });
+
+        var shim = require.config('shim');
+
+        if (shim[moduleName]) {
+          deps = deps.concat(shim[moduleName]);
+        }
+        var loadDependencies = deps.reduce(function(previous, dep) {
+          return previous.then(function() {
+            var current = dep;
+            var _module = global.module;
+            var _exports = global.exports;
+
+            global.module = { exports: {} };
+            global.exports = module.exports;
+
+            if (isLocal(current)) {
+              current = join(pkgPath, current);
+            }
+
+            if (require.cache[dep]) {
+              return require.cache[dep].exports;
+            }
+
+            return require.load(current).then(function() {
+              require.cache[dep] = global.module;
+
+              global.module = _module;
+              global.exports = _exports;
+
+              return require.cache[dep].exports;
+            });
+          });
+        }, Promise.resolve());
+
+        return loadDependencies;
+      }).then(function() { return pkg; });
+    }).then(function(pkg) {
+      if (pkg.main.slice(-5) === '.json') {
+        pkg.main = '';
+      }
+      if (pkg.main.slice(-3) === '.js') {
+        pkg.main = pkg.main.slice(0, -3);
+      }
+
+      var _module = global.module;
+      var _exports = global.exports;
+
+      global.module = { exports: {} };
+      global.exports = module.exports;
+
       return require.load({
-        name: pkg.name,
+        name: moduleName,
         path: join(pkgPath, pkg.main)
+      }).then(function() {
+        if (promiseCache[moduleName]) {
+          return require.cache[moduleName].exports;
+        }
+
+        require.cache[moduleName] = global.module;
+        global.module = _module;
+        global.exports = _exports;
+
+        console.log(moduleName, require.cache[moduleName]);
+        return require.cache[moduleName].exports;
       });
     });
   }
