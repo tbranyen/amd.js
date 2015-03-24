@@ -348,7 +348,7 @@
 
     if (promiseCache[name] && name === path) {
       return promiseCache[name].then(function(module) {
-        require.cache[name] = module;
+        require.cache[name] = { exports: module };
         return module.exports;
       });
     }
@@ -430,6 +430,7 @@
           module.name = moduleName;
 
           resolve(module.exports);
+
           return module.exports;
         });
 
