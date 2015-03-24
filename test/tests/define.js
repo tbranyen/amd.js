@@ -21,12 +21,12 @@ describe('define', function() {
     });
   });
 
-  it('can define an anonymous module', function() {
-    return define([], function() {
-      return 'Anonymous';
-    }).then(function(module) {
-      assert(module.exports === 'Anonymous', 'Exports the right value');
-      assert(amd.require(module.name) === 'Anonymous');
-    });
-  });
+  //it('can define an anonymous module', function() {
+  //  define([], function() {
+  //    return 'Anonymous';
+  //  }).then(function(module) {
+  //    assert(module.exports === 'Anonymous', 'Exports the right value');
+  //    assert(amd.require(module.name) === 'Anonymous');
+  //  });
+  //});
 });

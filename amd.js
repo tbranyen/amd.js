@@ -5,13 +5,15 @@
   var requireRegExp = /require\(['"](.*)['"]\)/g;
   var hasPluginRegExp = /(.*\w)\.(.*)$/;
   var promiseCache = {};
-  // FIXME If you implement contexts, you're gonna hate this global.
+  var isConfig = '';
   var options = {
     paths: {},
     shim: {},
     baseUrl: ''
   };
-  var isConfig = '';
+  // In the browser we queue up the anonymous defines and pair them with the
+  // script `onload` event.
+  var toBeNamed = [];
 
   // Find a valid `require` function.
   nodeRequire = global.require || nodeRequire;
@@ -20,7 +22,7 @@
   require.isNode = Boolean(nodeRequire);
   require.isBrowser = !require.isNode;
 
-  // TODO Symlink support from node_modules.
+  // TODO Support symlinks in node_modules.
   //if (__dirname !== process.cwd()) {}
 
   /**
@@ -75,6 +77,12 @@
     }
   }
 
+  /**
+   * addOptions
+   *
+   * @param opts
+   * @return
+   */
   function addOptions(opts) {
     Object.keys(opts || {}).forEach(function(key) {
       addOption(key, opts[key]);
@@ -82,25 +90,21 @@
   }
 
   /**
-   * Defines a module to be required.
+   * Process a module definition via `define`.
    *
    * @param deps
    * @param callback
-   * @return {Promise}
+   * @return {Promise} that resolves when the module has loaded.
    */
-  function define(deps, callback) {
-    var isCjs, isMixed, script, moduleName, modulePath;
-    var isNode = require.isNode;
+  function processDefine(deps, callback) {
+    var isCjs, isMixed;
 
-    // Browser env, get access to the parent script.
-    if (require.isBrowser) {
-      script = define.__script__;
-    }
+    var moduleName = define.__module_name__;
+    var modulePath = define.__module_path__;
 
-    // Find current module id.
-    if (isNode || script) {
-      moduleName = isNode ? define.__module_name__ : script.dataset.moduleName;
-      modulePath = isNode ? define.__module_path__ : script.dataset.modulePath;
+    if (typeof moduleName === 'object') {
+      modulePath = moduleName.path;
+      moduleName = moduleName.name;
     }
 
     delete define.__module_name__;
@@ -114,7 +118,7 @@
     }
 
     // User opt'd into Simplified Common JS pattern.
-    if (!callback) {
+    if (!callback && typeof deps === 'function') {
       callback = deps;
 
       deps = callback.toString().match(requireRegExp) || [];
@@ -142,7 +146,7 @@
 
     // Map over the deps and ensure they are normalized.
     if (!isCjs) {
-      deps = deps.map(function(dep) {
+      deps = (deps || []).map(function(dep) {
         // Do not mess with special imports.
         if (['require', 'exports', 'module'].indexOf(dep) > -1) {
           return dep;
@@ -158,14 +162,7 @@
       });
     }
 
-    // If no module name exists, use a UUID.
-    if (!moduleName) {
-      moduleName = "0000-0000-0000-0000-0000".replace(/0/g, function() {
-        return Math.floor(Math.random() * 16).toString(16);
-      });
-    }
-
-    var loadAllDeps = Promise.all(deps.map(require.load)).then(function(deps) {
+    var registerModule = function(deps) {
       var module = { exports: {} };
 
       // Ensure special imports are addressed.
@@ -194,29 +191,48 @@
         callback.apply(global, deps);
       }
       // In AMD we set the `module.exports` with the return value.
-      else {
+      else if (callback) {
         module.exports = callback.apply(global, deps);
       }
 
-      if (isNode) {
+      if (require.isNode) {
         require.cache[moduleName] = {
           exports: module.exports
         };
-      }
-      else {
-        require.cache[moduleName] = {
-          exports: module.exports
-        }
-      }
 
-      // Attach the current module name.
-      module.name = moduleName;
+        // Attach the current module name.
+        module.name = moduleName;
+      }
 
       return module;
-    });
+    };
 
-    // Attach the in-flight promise.
-    return promiseCache[moduleName] = promiseCache.__inflight__ = loadAllDeps;
+    var loadModule = Promise.all(deps.map(require.load))
+      .then(registerModule)
+      .catch(function(ex) {
+        console.log(ex.stack);
+      });
+
+    promiseCache[moduleName] = loadModule;
+
+    return loadModule;
+  }
+
+  /**
+   * Defines a module to be required.
+   *
+   * @param deps
+   * @param callback
+   * @return {Promise}
+   */
+  function define(deps, callback) {
+    // Node `defines` are synchronous, so immediately process.
+    if (require.isNode || typeof deps === 'string') {
+      processDefine.apply(this, arguments);
+    }
+    else {
+      toBeNamed.push(arguments);
+    }
   }
 
   // This is often required to load UMD modules.
@@ -285,14 +301,16 @@
     return moduleName;
   };
 
-  require.load = function(moduleName) {
-    var name = moduleName;
-    var path = moduleName;
+  require.load = function(moduleParts) {
+    var name = moduleParts;
+    var path = moduleParts;
 
-    if (typeof moduleName !== 'string') {
-      name = moduleName.name;
-      path = moduleName.path;
+    if (typeof moduleParts === 'object') {
+      name = moduleParts.name;
+      path = moduleParts.path;
     }
+
+    var moduleName = name;
 
     // Normalize the name and path.
     name = require.resolve(name);
@@ -320,19 +338,19 @@
       return name;
     }
 
-    // If a module is in-flight, meaning still loading, wait for it.
-    if (promiseCache[name]) {
-      return promiseCache[name].then(function(module) {
-        return module.exports;
-      });
-    }
-
     // TODO this only works now because ./success is assumed unique, we need to
     // normalize all modules to full paths in the main cache.  the local require
     // might be able to figure out relative paths better
     if (require.cache[path] && require.cache[path].exports) {
       require.cache[name] = require.cache[path];
       return Promise.resolve(require.cache[path].exports);
+    }
+
+    if (promiseCache[name] && name === path) {
+      return promiseCache[name].then(function(module) {
+        require.cache[name] = module;
+        return module.exports;
+      });
     }
 
     if (require.isNode) {
@@ -367,15 +385,19 @@
     }
 
     // If it is a path, do not try and look up.
-    if (path === name && !isLocal(name)) {
-      return nodeModulesResolve(name || moduleName);
+    if (path === name && !isLocal(path)) {
+      return nodeModulesResolve(name);
+    }
+
+    // Load JSON.
+    if (path.slice(-5) === '.json') {
+      return makeRequest(require.toUrl(path))
+        .then(JSON.parse)
+        .then(require.config);
     }
 
     var script = document.createElement('script');
     script.src = require.toUrl(path) + '.js';
-    script.dataset.moduleName = name;
-    script.dataset.modulePath = path;
-    define.__script__ = script;
     document.body.appendChild(script);
 
     return new Promise(function(resolve, reject) {
@@ -393,32 +415,26 @@
       });
 
       script.addEventListener('load', function() {
-        promiseCache[script.dataset.moduleName] = promiseCache.__inflight__;
+        define.__module_name__ = moduleName;
+        define.__module_path__ = script.src;
+
+        var modSpec = toBeNamed.shift();
+        var loadModule = processDefine.apply(this, modSpec);
+
+        promiseCache[moduleName] = loadModule.then(function(module) {
+          require.cache[moduleName.name || moduleName] = {
+            exports: module.exports
+          };
+
+          // Attach the current module name.
+          module.name = moduleName;
+
+          resolve(module.exports);
+          return module.exports;
+        });
 
         window.onerror = oldError;
         script.parentNode.removeChild(script);
-
-        if (isConfig === name) {
-          isConfig = '';
-          return resolve();
-        }
-
-        if (typeof module === 'object' && module.exports) {
-          return resolve(module.exports);
-        }
-
-        if (!promiseCache[name]) {
-          return console.log('Could not find module: ' + name + ' in flight');
-        }
-
-        promiseCache[name].then(function() {
-          if (require.cache[name]) {
-            resolve(require.cache[name].exports);
-          }
-          else {
-            reject(new Error('Module: ' + name + ' failed to load'));
-          }
-        });
       });
     });
   };
@@ -507,7 +523,7 @@
 
         // FIXME Naive check here for AMD compat.
         if (callback.indexOf('define.amd') > -1 || callback.indexOf('define(') > -1) {
-          return require.load(modulePath).then(function(module) {
+          return require.load({ name: moduleName, path: modulePath }).then(function(module) {
             return [moduleName, module];
           });
         }
@@ -526,6 +542,11 @@
 
         return deps.reduce(function(previous, dep) {
           return previous.then(function() {
+            // If already in flight, simply return that Promise.
+            if (promiseCache[dep]) {
+              return promiseCache[dep];
+            }
+
             var current = dep;
             var _module = global.module;
             var _exports = global.exports;
