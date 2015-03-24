@@ -225,7 +225,7 @@
    * @return {Promise}
    */
   function define(deps, callback) {
-    // Node `defines` are synchronous, so immediately process.
+    // Node and named `defines` are synchronous, so immediately process.
     if (require.isNode || typeof deps === 'string') {
       processDefine.apply(this, arguments);
     }
@@ -419,18 +419,24 @@
         define.__module_path__ = script.src;
 
         var modSpec = toBeNamed.shift();
-        var loadModule = processDefine.apply(this, modSpec);
 
-        promiseCache[moduleName] = loadModule.then(function(module) {
-          require.cache[moduleName.name || moduleName] = module;
+        if (modSpec) {
+          var loadModule = processDefine.apply(this, modSpec);
 
-          // Attach the current module name.
-          module.name = moduleName;
+          promiseCache[moduleName] = loadModule.then(function(module) {
+            require.cache[moduleName.name || moduleName] = module;
 
-          resolve(module.exports);
+            // Attach the current module name.
+            module.name = moduleName;
 
-          return module;
-        });
+            resolve(module.exports);
+
+            return module;
+          });
+        }
+        else {
+          resolve();
+        }
 
         window.onerror = oldError;
         script.parentNode.removeChild(script);
