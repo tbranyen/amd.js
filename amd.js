@@ -196,13 +196,11 @@
       }
 
       if (require.isNode) {
-        require.cache[moduleName] = {
-          exports: module.exports
-        };
-
-        // Attach the current module name.
-        module.name = moduleName;
+        require.cache[moduleName] = module;
       }
+
+      // Attach the current module name.
+      module.name = moduleName;
 
       return module;
     };
@@ -348,7 +346,7 @@
 
     if (promiseCache[name] && name === path) {
       return promiseCache[name].then(function(module) {
-        require.cache[name] = { exports: module };
+        require.cache[name] = module;
         return module.exports;
       });
     }
@@ -377,8 +375,9 @@
           resolve(exported);
         }
         else {
-          promiseCache[name].then(function() {
-            resolve(require.cache[name].exports);
+          promiseCache[name].then(function(module) {
+            require.cache[name] = module;
+            resolve(module.exports);
           });
         }
       });
@@ -422,16 +421,14 @@
         var loadModule = processDefine.apply(this, modSpec);
 
         promiseCache[moduleName] = loadModule.then(function(module) {
-          require.cache[moduleName.name || moduleName] = {
-            exports: module.exports
-          };
+          require.cache[moduleName.name || moduleName] = module;
 
           // Attach the current module name.
           module.name = moduleName;
 
           resolve(module.exports);
 
-          return module.exports;
+          return module;
         });
 
         window.onerror = oldError;
@@ -594,11 +591,11 @@
 
     var cacheResult = function(result) {
       var moduleName = result[0];
-      var module = result[1];
+      var exports = result[1];
 
-      require.cache[moduleName] = { exports: module };
+      require.cache[moduleName] = { exports: exports };
 
-      return module;
+      return require.cache[moduleName];
     };
 
     return promiseCache[moduleName] = makeRequest(pkgPath)
