@@ -195,7 +195,7 @@
         module.exports = callback.apply(global, deps);
       }
 
-      if (require.isNode) {
+      if (moduleName) {
         require.cache[moduleName] = module;
       }
 
@@ -226,7 +226,7 @@
    */
   function define(deps, callback) {
     // Node `defines` are synchronous, so immediately process.
-    if (require.isNode) {
+    if (require.isNode || typeof deps === 'string') {
       processDefine.apply(this, arguments);
     }
     else {
@@ -492,9 +492,8 @@
       if (pkg.main.indexOf('.js') === pkg.main.length - 3) {
         pkg.main = pkg.main.slice(0, -3);
 
-        // TODO Refactor into `join`.
         if (pkg.main[0] !== '.') {
-          pkg.main = './' + pkg.main;
+          pkg.main = join('.', pkg.main);
         }
       }
 
@@ -596,7 +595,7 @@
 
       require.cache[moduleName] = { exports: exports };
 
-      return require.cache[moduleName];
+      return require.cache[moduleName].exports;
     };
 
     return promiseCache[moduleName] = makeRequest(pkgPath)
