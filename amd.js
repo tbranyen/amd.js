@@ -225,7 +225,7 @@
    */
   function define(deps, callback) {
     // Node `defines` are synchronous, so immediately process.
-    if (require.isNode || typeof deps === 'string') {
+    if (require.isNode) {
       processDefine.apply(this, arguments);
     }
     else {
