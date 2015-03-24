@@ -209,6 +209,7 @@
       .then(registerModule)
       .catch(function(ex) {
         console.log(ex.stack);
+        throw ex;
       });
 
     promiseCache[moduleName] = loadModule;
