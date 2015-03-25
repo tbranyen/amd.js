@@ -16,7 +16,7 @@ define(function(require, exports, module) {
         done(resolve(xhr.responseText));
       };
 
-      xhr.open('GET', url, true);
+      xhr.open('GET', url + '.html', true);
       xhr.send(null);
     }
     else {

@@ -20,5 +20,8 @@
     "lodash-template-loader": "^0.1.7",
     "mocha": "^2.2.1",
     "mustache": "^1.1.0"
+  },
+  "dependencies": {
+    "combyne": "^0.6.5"
   }
 }

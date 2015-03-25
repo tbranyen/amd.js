@@ -146,7 +146,7 @@
 
     // Map over the deps and ensure they are normalized.
     if (!isCjs) {
-      deps = (deps || []).map(function(dep) {
+      deps = (deps || []).filter(Boolean).map(function(dep) {
         // Do not mess with special imports.
         if (['require', 'exports', 'module'].indexOf(dep) > -1) {
           return dep;
@@ -270,7 +270,11 @@
   };
 
   // Configure the loader.
-  require.config = function(opts) {
+  require.config = function(opts, val) {
+    if (typeof opts === 'string' && val) {
+      return addOption(opts, val);
+    }
+
     // If the argument is a string, pass back the configuration prop.
     if (typeof opts === 'string') {
       return options[opts];
@@ -285,7 +289,7 @@
   // Convert a module name to a path.
   require.resolve = function(moduleName) {
     var parts = moduleName.split('/');
-    var paths = require.config('paths') || {};
+    var paths = require.config('paths');
 
     // Check if the first part is in `require.config('paths')`.
     if (Object.keys(paths).indexOf(parts[0]) > -1) {
@@ -315,13 +319,13 @@
     name = require.resolve(name);
     path = require.resolve(path);
 
-    var hasPlugin = name.match(hasPluginRegExp);
+    var hasPlugin = path.match(hasPluginRegExp);
 
     // Support plugins.
     if (hasPlugin && require.config('paths')[hasPlugin[2]]) {
       return require.load(require.resolve(hasPlugin[2])).then(function(plugin) {
         return new Promise(function(resolve) {
-          plugin.load(path, require, function(exports) {
+          plugin.load(require.resolve(hasPlugin[1]), require, function(exports) {
             require.cache[name] = {
               exports: exports
             };
@@ -435,7 +439,12 @@
           });
         }
         else {
-          resolve();
+          if (require.cache[moduleName]) {
+            resolve(require.cache[moduleName].exports);
+          }
+          else {
+            resolve();
+          }
         }
 
         window.onerror = oldError;
@@ -637,6 +646,9 @@
     if (thisScript.dataset.config) {
       isConfig = thisScript.dataset.config;
       loadConfig = require.load(thisScript.dataset.config);
+    }
+    else {
+      loadConfig = require.load('/package.json');
     }
 
     if (thisScript.dataset.main) {

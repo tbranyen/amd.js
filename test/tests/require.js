@@ -133,10 +133,6 @@ describe('require', function() {
     require.config({
       paths: {
         html: 'lodash-template-loader'
-      },
-
-      lodashLoader: {
-        ext: ''
       }
     });
 
