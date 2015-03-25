@@ -390,7 +390,9 @@
 
     // If it is a path, do not try and look up.
     if (path === name && !isLocal(path)) {
-      return nodeModulesResolve(name);
+      return nodeModulesResolve(name).then(function(module) {
+        return module.exports;
+      });
     }
 
     // Load JSON.
@@ -610,7 +612,7 @@
 
       require.cache[moduleName] = { exports: exports };
 
-      return require.cache[moduleName].exports;
+      return require.cache[moduleName];
     };
 
     return promiseCache[moduleName] = makeRequest(pkgPath)
