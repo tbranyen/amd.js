@@ -23,7 +23,9 @@ define(function(require, exports, module) {
       var path = req('path');
       var fs = req('fs');
 
-      fs.readFile(path.join(__dirname, '../', url), function(err, contents) {
+      var normal = path.join(__dirname, '../', url + '.html');
+
+      fs.readFile(normal, function(err, contents) {
         done(resolve(String(contents)));
       });
     }
