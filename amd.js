@@ -32,16 +32,21 @@
    * @param pathB
    * @return A normalized combined path
    */
-  function join(pathA, pathB) {
+  function relative(pathA, pathB) {
     var base = pathA.split('/');
+
+    // Get dirname.
+    if (pathA.slice(-1) !== '/') {
+      base.pop();
+    }
+
     var segment = pathB
       .split('/')
       .map(function(part) {
         if (part === '.') {
-          base.pop();
+          /* Do nothing */
         }
         else if (part === '..') {
-          base.pop();
           base.pop();
         }
         else {
@@ -52,6 +57,8 @@
 
     return base.concat(segment).join('/');
   }
+
+  require.relative = relative;
 
   /**
    * isLocal
@@ -130,7 +137,7 @@
 
         return {
           name: current,
-          path: isLocal(current) ? join(modulePath, current) : current
+          path: isLocal(current) ? relative(modulePath, current) : current
         };
       });
 
@@ -157,7 +164,7 @@
 
         return {
           name: dep,
-          path: isLocal(dep) ? join(modulePath, dep) : dep
+          path: isLocal(dep) ? relative(modulePath, dep) : dep
         };
       });
     }
@@ -365,7 +372,7 @@
 
         try {
           if (process.cwd() !== __dirname && isLocal(path)) {
-            path = join(nodeRequire.main.filename, path);
+            path = relative(nodeRequire.main.filename, path);
           }
 
           exported = nodeRequire(path);
@@ -388,8 +395,8 @@
       });
     }
 
-    // If it is a path, do not try and look up.
-    if (path === name && !isLocal(path)) {
+    // If it is a path or URL, do not try and look up in node_modules.
+    if (path === name && path.indexOf('http') !== 0 && !isLocal(path)) {
       return nodeModulesResolve(name).then(function(module) {
         return module.exports;
       });
@@ -496,7 +503,7 @@
     if (moduleName.indexOf('/') > -1) {
       return require.load({
         name: moduleName,
-        path: join(pkgPath, './')
+        path: relative(pkgPath, './')
       });
     }
 
@@ -510,7 +517,7 @@
         pkg.main = pkg.main.slice(0, -3);
 
         if (pkg.main[0] !== '.') {
-          pkg.main = join('.', pkg.main);
+          pkg.main = relative('.', pkg.main);
         }
       }
 
@@ -522,7 +529,7 @@
         pkg.main += '.js';
       }
 
-      var modulePath = join(pkgPath, pkg.main);
+      var modulePath = relative(pkgPath, pkg.main);
       var cache = global.sessionStorage[pkg.main + ':' + pkg.version];
       var getCallback = cache ? Promise.resolve(cache) : makeRequest(modulePath);
 
@@ -570,7 +577,7 @@
             global.exports = module.exports;
 
             if (isLocal(current)) {
-              current = join(pkgPath, current);
+              current = relative(pkgPath, current);
             }
 
             if (require.cache[dep]) {
