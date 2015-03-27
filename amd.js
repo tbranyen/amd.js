@@ -643,7 +643,7 @@
   }
 
   if (require.isBrowser) {
-    var thisScript = document.scripts[document.scripts.length - 1];
+    var thisScript = document.currentScript;
     var loadConfig = Promise.resolve(true);
 
     if (thisScript.dataset.config) {
@@ -655,6 +655,11 @@
     }
 
     if (thisScript.dataset.main) {
+      // Infer the baseUrl.
+      if (thisScript.dataset.main.indexOf('/') === 0) {
+        options.baseUrl = '/';
+      }
+
       loadConfig.then(function() {
         require.load(thisScript.dataset.main);
       });
