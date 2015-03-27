@@ -260,7 +260,7 @@
    * @return {Promise}
    */
   function define(deps, callback) {
-    if (document && document.currentScript) {
+    if (typeof document !== 'undefined' && document.currentScript) {
       define.__module_path__ = document.currentScript.__module_path__;
       define.__module_name__ = document.currentScript.__module_name__;
     }
