@@ -25,6 +25,34 @@
   // TODO Support symlinks in node_modules.
   //if (__dirname !== process.cwd()) {}
 
+  var exports = {
+    define: define, require: require
+  };
+
+  if (typeof module === 'object' && module.exports) {
+    module.exports = exports;
+  }
+
+  // For CommonJS in the browser.
+  if (!require.isNode) {
+    Object.defineProperty(global, 'module', {
+      get: function() {
+        var module = {};
+        var script = document.currentScript;
+        var moduleName = script.__module_name__;
+
+        Object.defineProperty(module, 'exports', {
+          get: function() { return {}; },
+          set: function(val) {
+            require.cache[moduleName] = { exports: val };
+          }
+        });
+
+        return script && script.__is_cjs__ ? module : undefined;
+      }
+    });
+  }
+
   /**
    * Joins two paths together.
    *
@@ -232,12 +260,20 @@
    * @return {Promise}
    */
   function define(deps, callback) {
+    if (document && document.currentScript) {
+      define.__module_path__ = document.currentScript.__module_path__;
+      define.__module_name__ = document.currentScript.__module_name__;
+    }
+
     // Node and named `defines` are synchronous, so immediately process.
     if (require.isNode || typeof deps === 'string') {
       processDefine.apply(this, arguments);
     }
-    else {
+    else if (!document.currentScript) {
       toBeNamed.push(arguments);
+    }
+    else {
+      document.currentScript.flight = processDefine(deps, callback);
     }
   }
 
@@ -311,7 +347,7 @@
     return moduleName;
   };
 
-  require.load = function(moduleParts) {
+  require.load = function(moduleParts, isCJS) {
     var name = moduleParts;
     var path = moduleParts;
 
@@ -398,7 +434,7 @@
     // If it is a path or URL, do not try and look up in node_modules.
     if (path === name && path.indexOf('http') !== 0 && !isLocal(path)) {
       return nodeModulesResolve(name).then(function(module) {
-        return module.exports;
+        return module ? module.exports : {};
       });
     }
 
@@ -411,6 +447,10 @@
 
     var script = document.createElement('script');
     script.src = require.toUrl(path) + '.js';
+    script.__module_name__ = moduleName;
+    script.__module_path__ = script.src;
+    script.__is_cjs__ = isCJS;
+
     document.body.appendChild(script);
 
     return new Promise(function(resolve, reject) {
@@ -428,33 +468,13 @@
       });
 
       script.addEventListener('load', function() {
-        define.__module_name__ = moduleName;
-        define.__module_path__ = script.src;
-
-        var modSpec = toBeNamed.shift();
-
-        if (modSpec) {
-          var loadModule = processDefine.apply(this, modSpec);
-
-          promiseCache[moduleName] = loadModule.then(function(module) {
-            require.cache[moduleName.name || moduleName] = module;
-
-            // Attach the current module name.
-            module.name = moduleName;
-
-            resolve(module.exports);
-
-            return module;
-          });
+        if (require.cache[moduleName]) {
+          resolve(require.cache[moduleName].exports);
         }
-        else {
-          if (require.cache[moduleName]) {
-            resolve(require.cache[moduleName].exports);
-          }
-          else {
-            resolve();
-          }
+        else if (script.flight) {
+          script.flight.then(function(module) { resolve(module.exports); });
         }
+        else { resolve(); }
 
         window.onerror = oldError;
         script.parentNode.removeChild(script);
@@ -532,6 +552,7 @@
       var modulePath = relative(pkgPath, pkg.main);
       var cache = global.sessionStorage[pkg.main + ':' + pkg.version];
       var getCallback = cache ? Promise.resolve(cache) : makeRequest(modulePath);
+      var isCJS = true;
 
       return getCallback.then(function(callback) {
         callback = callback.toString();
@@ -543,18 +564,17 @@
           modulePath = modulePath.slice(0, -3);
         }
 
-        // FIXME Naive check here for AMD compat.
-        if (callback.indexOf('define.amd') > -1 || callback.indexOf('define(') > -1) {
-          return require.load({ name: moduleName, path: modulePath }).then(function(module) {
-            return [moduleName, module];
-          });
-        }
-
         var deps = callback.toString().match(requireRegExp) || [];
 
         deps = deps.map(function(dep) {
           return dep.slice(9, -2);
         });
+
+        // FIXME Naive check here for AMD compat.
+        if (callback.indexOf('define.amd') > -1 || callback.indexOf('define(') > -1) {
+          deps = [];
+          isCJS = false;
+        }
 
         var shim = require.config('shim');
 
@@ -570,11 +590,6 @@
             }
 
             var current = dep;
-            var _module = global.module;
-            var _exports = global.exports;
-
-            global.module = { exports: {} };
-            global.exports = module.exports;
 
             if (isLocal(current)) {
               current = relative(pkgPath, current);
@@ -584,30 +599,17 @@
               return require.cache[dep].exports;
             }
 
-            return require.load(current).then(function() {
+            return require.load(current).then(function(exports) {
               // TODO Make this localized to a specific requiring module.
-              require.cache[dep] = global.module;
-
-              global.module = _module;
-              global.exports = _exports;
-
-              return require.cache[dep].exports;
+              require.cache[dep] = { exports: exports };
+              return exports;
             });
           });
         }, Promise.resolve()).then(function() {
-          var _module = global.module;
-          var _exports = global.exports;
+          return require.load(modulePath, isCJS).then(function(exports) {
+            require.cache[moduleName] = { exports: exports };
 
-          global.module = { exports: {} };
-          global.exports = module.exports;
-
-          return require.load(modulePath).then(function() {
-            require.cache[moduleName] = global.module;
-
-            global.module = _module;
-            global.exports = _exports;
-
-            return [moduleName, require.cache[moduleName].exports];
+            return [moduleName, exports];
           });
         });
       });
@@ -627,14 +629,6 @@
       .then(normalizeMain)
       .then(loadMainScript)
       .then(cacheResult);
-  }
-
-  var exports = {
-    define: define, require: require
-  };
-
-  if (typeof module === 'object' && module.exports) {
-    module.exports = exports;
   }
 
   // Always expose the global amd.
