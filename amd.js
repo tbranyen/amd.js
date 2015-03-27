@@ -516,7 +516,7 @@
    * @return
    */
   function nodeModulesResolve(moduleName) {
-    var pkgPath = '../node_modules/' + moduleName + '/package.json';
+    var pkgPath = options.baseUrl + 'node_modules/' + moduleName + '/package.json';
     var pkg = {};
 
     // Fetch from nested modules.
