@@ -3,12 +3,13 @@
 
   // Save the Node/whatever global require.
   var requireRegExp = /require\(['"](.*)['"]\)/g;
-  var hasPluginRegExp = /(.*\w)\.(.*)$/;
+  var hasExtensionRegExp = /(.*\w)\.(.*)$/;
   var promiseCache = {};
   var isConfig = '';
   var options = {
     paths: {},
     shim: {},
+    extensions: {},
     baseUrl: ''
   };
   // In the browser we queue up the anonymous defines and pair them with the
@@ -333,10 +334,17 @@
   require.resolve = function(moduleName) {
     var parts = moduleName.split('/');
     var paths = require.config('paths');
+    var extensions = require.config('extensions');
 
     // Check if the first part is in `require.config('paths')`.
     if (Object.keys(paths).indexOf(parts[0]) > -1) {
       parts[0] = paths[parts[0]];
+      return parts.join('/');
+    }
+
+    // Check if the first part is in `require.config('extensions')`.
+    if (Object.keys(extensions).indexOf(parts[0]) > -1) {
+      parts[0] = extensions[parts[0]];
       return parts.join('/');
     }
 
@@ -362,13 +370,13 @@
     name = require.resolve(name);
     path = require.resolve(path);
 
-    var hasPlugin = path.match(hasPluginRegExp);
+    var hasExtension = path.match(hasExtensionRegExp);
 
-    // Support plugins.
-    if (hasPlugin && require.config('paths')[hasPlugin[2]]) {
-      return require.load(require.resolve(hasPlugin[2])).then(function(plugin) {
+    // Support extensions.
+    if (hasExtension && require.config('extensions')[hasExtension[2]]) {
+      return require.load(require.resolve(hasExtension[2])).then(function(plugin) {
         return new Promise(function(resolve) {
-          plugin.load(require.resolve(hasPlugin[1]), require, function(exports) {
+          plugin.load(require.resolve(hasExtension[1]), require, function(exports) {
             require.cache[name] = {
               exports: exports
             };

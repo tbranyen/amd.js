@@ -1,6 +1,8 @@
 describe('require', function() {
   var require = amd.require;
 
+  require.config('baseUrl', '/');
+
   it('is a function', function() {
     assert(typeof require === 'function');
   });
@@ -112,8 +114,8 @@ describe('require', function() {
     });
   });
 
-  it('can use a plugin', function() {
-    require.config({ paths: { html: './fixtures/mustache' } });
+  it('can load a custom extension', function() {
+    require.config({ extensions: { html: './fixtures/mustache' } });
 
     return require.load('./fixtures/templates/test.html').then(function(tmpl) {
       var output = tmpl({ woah: 'man' });
@@ -121,17 +123,17 @@ describe('require', function() {
     });
   });
 
-  it('can use a plugin in a module', function() {
-    require.config({ paths: { html: './fixtures/mustache' } });
+  it('can use a custom extension in a module', function() {
+    require.config({ extensions: { html: './fixtures/mustache' } });
 
     return require.load('./fixtures/plugin').then(function(module) {
       assert(module === 'man');
     });
   });
 
-  inBrowserIt('can use a pre-existing plugin', function() {
+  inBrowserIt('can use a pre-existing plugin to load extension', function() {
     require.config({
-      paths: {
+      extensions: {
         html: 'lodash-template-loader'
       }
     });
