@@ -4,7 +4,7 @@
   if (typeof require === 'function') {
     // Mocha overrides the global object, reattach the `require` function.
     global.require = require;
-    global.amd = require('../amd');
+    global.amd = require('../');
   }
 
   global.assert = function(val, msg) {

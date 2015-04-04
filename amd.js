@@ -5,16 +5,12 @@
   var requireRegExp = /require\(['"](.*)['"]\)/g;
   var hasExtensionRegExp = /(.*\w)\.(.*)$/;
   var promiseCache = {};
-  var isConfig = '';
   var options = {
     paths: {},
     shim: {},
     extensions: {},
     baseUrl: ''
   };
-  // In the browser we queue up the anonymous defines and pair them with the
-  // script `onload` event.
-  var toBeNamed = [];
 
   // Find a valid `require` function.
   nodeRequire = global.require || nodeRequire;
@@ -40,6 +36,7 @@
       get: function() {
         var module = {};
         var script = document.currentScript;
+        if (!script) { return {}; }
         var moduleName = script.__module_name__;
 
         Object.defineProperty(module, 'exports', {
@@ -269,9 +266,6 @@
     // Node and named `defines` are synchronous, so immediately process.
     if (require.isNode || typeof deps === 'string') {
       processDefine.apply(this, arguments);
-    }
-    else if (!document.currentScript) {
-      toBeNamed.push(arguments);
     }
     else {
       document.currentScript.flight = processDefine(deps, callback);

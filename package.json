@@ -19,7 +19,8 @@
     "lodash": "^3.5.0",
     "lodash-template-loader": "^0.1.7",
     "mocha": "^2.2.1",
-    "mustache": "^1.1.0"
+    "mustache": "^1.1.0",
+    "amd.js": "tbranyen/amd.js"
   },
   "dependencies": {
     "combyne": "^0.6.5"
