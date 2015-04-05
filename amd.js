@@ -476,7 +476,17 @@
         else if (script.flight) {
           script.flight.then(function(module) { resolve(module.exports); });
         }
-        else { resolve(); }
+        else {
+          // Try to resolve with shim.
+          if (require.config('shim')[moduleName]) {
+            var shimVal = window[require.config('shim')[moduleName].exports];
+            require.cache[moduleName] = { exports: shimVal };
+            resolve(shimVal);
+          }
+          else {
+            resolve();
+          }
+        }
 
         window.onerror = oldError;
         script.parentNode.removeChild(script);
