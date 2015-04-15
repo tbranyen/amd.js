@@ -238,12 +238,14 @@
       return module;
     };
 
-    var loadModule = Promise.all(deps.map(require.load))
-      .then(registerModule)
-      .catch(function(ex) {
-        console.log(ex.stack);
-        throw ex;
-      });
+    var loadModule = Promise.all(deps.map(function(name) {
+      return require.load(name);
+    }))
+    .then(registerModule)
+    .catch(function(ex) {
+      console.log(ex.stack);
+      throw ex;
+    });
 
     promiseCache[moduleName] = loadModule;
 
@@ -623,6 +625,10 @@
           });
         }, Promise.resolve()).then(function() {
           return require.load(modulePath, isCJS).then(function(exports) {
+            if (require.cache[moduleName]) {
+              return [moduleName, require.cache[moduleName].exports];
+            }
+
             require.cache[moduleName] = { exports: exports };
 
             return [moduleName, exports];
