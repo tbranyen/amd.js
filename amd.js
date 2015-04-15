@@ -604,11 +604,15 @@
             var current = dep;
 
             if (isLocal(current)) {
-              current = relative(pkgPath, current);
+              current = relative(modulePath, current);
             }
 
             if (require.cache[dep]) {
               return require.cache[dep].exports;
+            }
+
+            if (current.slice(-3) === '.js') {
+              current = current.slice(0, -3);
             }
 
             return require.load(current).then(function(exports) {
